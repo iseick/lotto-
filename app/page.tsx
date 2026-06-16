@@ -1,65 +1,186 @@
-import Image from "next/image";
+import { countDraws, latestRound, listDraws } from "@/lib/draws";
+import { countPurchases, totalSpent } from "@/lib/purchases";
+import { roiSummary, resultsByRound } from "@/lib/score";
+import { LottoBalls } from "./components/LottoBalls";
+
+export const dynamic = "force-dynamic";
+
+function fmtWon(v: number | null): string {
+  if (v == null) return "-";
+  return v.toLocaleString("ko-KR") + "원";
+}
 
 export default function Home() {
+  const total = countDraws();
+  const latest = latestRound();
+  const recent = listDraws(5);
+  const top = recent[0];
+  const myPurchases = countPurchases();
+  const spent = totalSpent();
+  const roi = roiSummary();
+  const rounds = resultsByRound();
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+    <div className="space-y-6">
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="수집된 회차" value={`${total}회`} />
+        <Stat label="최신 회차" value={latest ? `${latest}회` : "-"} />
+        <Stat label="내 구매" value={`${myPurchases}건`} />
+        <Stat label="누적 지출" value={fmtWon(spent)} />
+      </section>
+
+      {myPurchases > 0 && (
+        <section className="rounded-xl border border-neutral-200 bg-white p-5">
+          <h2 className="mb-3 text-lg font-bold">내 성적 (ROI)</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Mini label="누적 당첨금" value={fmtWon(roi.winnings)} />
+            <Mini
+              label="순손익"
+              value={(roi.net >= 0 ? "+" : "") + fmtWon(roi.net)}
+              tone={roi.net >= 0 ? "pos" : "neg"}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+            <Mini
+              label="수익률"
+              value={roi.roiPct == null ? "-" : `${roi.roiPct.toFixed(1)}%`}
+              tone={roi.roiPct != null && roi.roiPct >= 0 ? "pos" : "neg"}
+            />
+            <Mini
+              label="당첨 게임"
+              value={`${roi.winningGames} / ${roi.scoredGames}`}
+            />
+          </div>
+
+          {rounds.length > 0 && (
+            <div className="mt-4 border-t border-neutral-100 pt-3">
+              <h3 className="mb-2 text-sm font-medium text-neutral-500">
+                회차별 성적
+              </h3>
+              <ul className="divide-y divide-neutral-100">
+                {rounds.slice(0, 8).map((r) => (
+                  <li
+                    key={r.round}
+                    className="flex items-center justify-between py-2 text-sm"
+                  >
+                    <span className="font-medium">
+                      {r.round}회
+                      <span className="ml-2 font-normal text-neutral-400">
+                        {r.draw_date ?? "추첨 전"}
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-3">
+                      <span className="text-neutral-500">
+                        {r.best_rank ? `최고 ${r.best_rank}등` : "—"}
+                      </span>
+                      <span className="font-medium">{fmtWon(r.winnings)}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <p className="mt-3 text-xs text-neutral-400">
+            ※ 2·3등 당첨금은 회차별 데이터가 없어 미산정(0원 처리)됩니다.
+          </p>
+        </section>
+      )}
+
+      {top && (
+        <section className="rounded-xl border border-neutral-200 bg-white p-5">
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 className="text-lg font-bold">
+              제 {top.round}회{" "}
+              <span className="text-sm font-normal text-neutral-500">
+                {top.draw_date}
+              </span>
+            </h2>
+            <span className="text-sm text-neutral-500">최근 당첨번호</span>
+          </div>
+          <LottoBalls
+            numbers={[top.n1, top.n2, top.n3, top.n4, top.n5, top.n6]}
+            bonus={top.bonus}
+          />
+          <div className="mt-4 grid grid-cols-2 gap-2 text-sm text-neutral-600 sm:grid-cols-3">
+            <div>
+              1등 <b className="text-neutral-900">{top.first_winners ?? "-"}명</b>
+            </div>
+            <div>
+              1등 상금{" "}
+              <b className="text-neutral-900">{fmtWon(top.first_prize)}</b>
+            </div>
+            <div>
+              총 판매액{" "}
+              <b className="text-neutral-900">{fmtWon(top.total_sales)}</b>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <section className="rounded-xl border border-neutral-200 bg-white p-5">
+        <h2 className="mb-3 text-lg font-bold">최근 회차</h2>
+        <ul className="divide-y divide-neutral-100">
+          {recent.map((d) => (
+            <li
+              key={d.round}
+              className="flex flex-wrap items-center gap-3 py-2.5"
+            >
+              <span className="w-20 shrink-0 text-sm font-medium text-neutral-500">
+                {d.round}회
+              </span>
+              <LottoBalls
+                numbers={[d.n1, d.n2, d.n3, d.n4, d.n5, d.n6]}
+                bonus={d.bonus}
+              />
+            </li>
+          ))}
+        </ul>
+        <a
+          href="/draws"
+          className="mt-3 inline-block text-sm text-blue-600 hover:underline"
+        >
+          전체 당첨번호 보기 →
+        </a>
+      </section>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white p-4">
+      <div className="text-xs text-neutral-500">{label}</div>
+      <div className="mt-1 text-2xl font-bold">{value}</div>
+      {hint && <div className="mt-0.5 text-xs text-neutral-400">{hint}</div>}
+    </div>
+  );
+}
+
+function Mini({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "pos" | "neg";
+}) {
+  const color =
+    tone === "pos"
+      ? "text-green-600"
+      : tone === "neg"
+        ? "text-red-600"
+        : "text-neutral-900";
+  return (
+    <div className="rounded-lg bg-neutral-50 p-3">
+      <div className="text-xs text-neutral-500">{label}</div>
+      <div className={`mt-0.5 text-lg font-bold ${color}`}>{value}</div>
     </div>
   );
 }

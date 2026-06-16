@@ -1,36 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 로또 트래커
 
-## Getting Started
+매주 새 판매점에서 구매한 로또를 **회차별로 관리**하고, **당첨번호를 수집·자동채점**하며,
+구매 패턴과 ROI(지출 대비 회수)를 분석하는 개인용 웹 앱.
 
-First, run the development server:
+> ⚠️ **확률에 대한 솔직한 전제**
+> 로또 6/45는 매 회차가 독립적인 무작위 추첨입니다. 어떤 패턴 분석도 **1등 당첨 확률
+> (1/8,145,060)을 높이지 못합니다.** 이 앱의 실질 가치는 ① 구매·지출의 체계적 관리,
+> ② 자동 채점으로 당첨 누락 방지, ③ **인기 조합 회피**(당첨 시 상금을 덜 나눠 갖도록)
+> 입니다. "확률"이 아니라 "관리와 기대 실수령액"을 다룹니다.
+
+## 기술 스택
+
+- **Next.js 16** (App Router, TypeScript) — 웹 UI + API
+- **better-sqlite3** — 로컬 SQLite (`data/lotto.db`)
+- **Tailwind CSS v4**
+
+## 실행
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev        # http://localhost:3000
+
+# 과거 전체 회차 백필 (최초 1회)
+npm run seed       # data/seed/draws.csv → DB import
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 데이터 수집 방식 (중요)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+동행복권 공식 당첨번호 API(`getLottoNumber`)는 **2026년 1월부터 봇 차단**되어
+서버에서 직접 호출하면 메인페이지로 302 리다이렉트됩니다. 그래서:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **과거 백필**: 공개 데이터셋 [`smok95/lotto`](https://github.com/smok95/lotto)에서 받아
+  독립 출처와 교차검증 후 `data/seed/draws.csv`로 적재. (검증: 1204회차 중 1202개 일치,
+  불일치 2건은 제3 출처로 smok95가 정확함을 확인)
+- **매주 신규**: 추첨(토요일) 후 당첨번호 6개+보너스를 **수동 입력**. 의존성 0, 절대 안 깨짐.
 
-## Learn More
+## DB 스키마
 
-To learn more about Next.js, take a look at the following resources:
+| 테이블 | 내용 |
+|---|---|
+| `draws` | 회차별 공식 당첨번호 6개+보너스, 추첨일, 1등 당첨자수/상금, 총판매액 |
+| `stores` | 판매점 마스터 (이름·주소·좌표·최초 방문 회차) |
+| `purchases` | 구매 1건(영수증) = 회차 + 판매점 + 금액 |
+| `games` | 게임 1줄(1,000원 = 번호 6개), 자동/수동/반자동 |
+| `results` | 게임×회차 채점 결과 (일치 개수, 등수, 당첨금) |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 로드맵
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- [x] **1단계 기반** — 스키마, 당첨번호 백필(1228회), import 파이프라인, 대시보드
+- [x] **2단계 입력** — 판매점/구매/게임 등록 UI, 주간 당첨번호 수동 입력
+- [x] **3단계 채점** — 구매·당첨번호 등록 시 자동 채점, 게임별 등수/당첨금, ROI·회차별 성적
+- [x] **4단계 분석** — 인기조합 회피 점수, 번호 빈도·홀짝·합계 분포, 판매점별 적중 통계
+- [ ] **5단계 알림** — 추첨 후 채점 결과 알림
 
-## Deploy on Vercel
+## 주요 경로
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `lib/db.ts` — DB 연결 + 스키마(멱등 마이그레이션)
+- `lib/draws.ts` — 당첨번호 저장소(upsert/조회)
+- `lib/csv.ts` — CSV 파싱/직렬화 + 번호 무결성 검증
+- `lib/scoring.ts` — 6/45 등수 판정 규칙
+- `app/api/draws/import` — CSV 일괄 import
+- `scripts/build-seed-csv.mjs` — smok95 JSON → 정규 CSV

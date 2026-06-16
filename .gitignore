@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 로컬 SQLite DB (각자 환경에서 생성)
+/data/*.db
+/data/*.db-shm
+/data/*.db-wal
+# 백필용 임시 다운로드 (재현 가능, 커밋 불필요)
+/data/_import/
+# data/seed/draws.csv 는 커밋해 시드 데이터로 유지
