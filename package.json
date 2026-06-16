@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "seed": "node scripts/seed.mjs",
+    "seed:turso": "node --env-file=.env scripts/seed.mjs",
     "build-seed-csv": "node scripts/build-seed-csv.mjs"
   },
   "dependencies": {
