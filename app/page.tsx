@@ -2,6 +2,7 @@ import { countDraws, latestRound, listDraws } from "@/lib/draws";
 import { countPurchases, totalSpent } from "@/lib/purchases";
 import { roiSummary, resultsByRound } from "@/lib/score";
 import { LottoBalls } from "./components/LottoBalls";
+import { RecommendBox } from "./components/RecommendBox";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,8 @@ export default async function Home() {
         <Stat label="내 구매" value={`${myPurchases}건`} />
         <Stat label="누적 지출" value={fmtWon(spent)} />
       </section>
+
+      <RecommendBox />
 
       {myPurchases > 0 && (
         <section className="rounded-xl border border-neutral-200 bg-white p-5">

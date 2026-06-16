@@ -5,6 +5,7 @@ import { createStore, type StoreInput } from "@/lib/stores";
 import { createPurchase, type PurchaseInput } from "@/lib/purchases";
 import { addManualDraw, type ManualDrawInput } from "@/lib/draws";
 import { scoreRound } from "@/lib/score";
+import { recommend, type Recommendation } from "@/lib/recommend";
 
 export type ActionResult =
   | { ok: true; id?: number }
@@ -40,6 +41,10 @@ export async function createPurchaseAction(
   } catch (e) {
     return fail(e);
   }
+}
+
+export async function recommendAction(): Promise<Recommendation> {
+  return recommend(5);
 }
 
 export async function addDrawAction(
