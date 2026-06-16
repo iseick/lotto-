@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createPurchaseAction, createStoreAction } from "../actions";
 import { NumberInputs } from "./NumberInputs";
+import { QrScanModal } from "./QrScanModal";
+import { parseLottoQr } from "@/lib/lottoQr";
 import type { GameMode } from "@/lib/purchases";
 
 interface StoreOption {
@@ -47,10 +49,30 @@ export function PurchaseForm({
     SLOTS.slice(0, 5).map(emptyGame)
   );
   const [msg, setMsg] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
   const [pending, start] = useTransition();
 
   function setGame(i: number, patch: Partial<GameState>) {
     setGames((gs) => gs.map((g, j) => (j === i ? { ...g, ...patch } : g)));
+  }
+
+  // QR 스캔/링크 결과로 회차+게임 자동 채우기.
+  function handleQr(text: string) {
+    const parsed = parseLottoQr(text);
+    setScanning(false);
+    if (!parsed) {
+      setMsg("⚠ QR을 인식하지 못했습니다. 로또 용지 QR이 맞는지 확인하세요.");
+      return;
+    }
+    setRound(String(parsed.round));
+    setGames(
+      parsed.games.map((g, i) => ({
+        slot: SLOTS[i] ?? "",
+        mode: g.mode,
+        nums: g.numbers.map((n) => String(n)),
+      }))
+    );
+    setMsg(`✓ QR에서 ${parsed.round}회 ${parsed.games.length}게임을 불러왔습니다`);
   }
   function addGame() {
     setGames((gs) => [...gs, emptyGame(SLOTS[gs.length] ?? "")]);
@@ -102,6 +124,17 @@ export function PurchaseForm({
 
   return (
     <div className="space-y-5">
+      <button
+        type="button"
+        onClick={() => {
+          setMsg(null);
+          setScanning(true);
+        }}
+        className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-blue-300 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 hover:bg-blue-100"
+      >
+        📷 로또 용지 QR 스캔해서 자동 입력
+      </button>
+
       <div className="grid grid-cols-2 gap-3 rounded-xl border border-neutral-200 bg-white p-5">
         <label className="block">
           <span className="mb-1 block text-sm text-neutral-600">응모 회차 *</span>
@@ -223,8 +256,22 @@ export function PurchaseForm({
         >
           {pending ? "저장 중…" : "구매 저장"}
         </button>
-        {msg && <span className="text-sm text-red-600">{msg}</span>}
+        {msg && (
+          <span
+            className={
+              msg.startsWith("✓")
+                ? "text-sm text-green-600"
+                : "text-sm text-red-600"
+            }
+          >
+            {msg}
+          </span>
+        )}
       </div>
+
+      {scanning && (
+        <QrScanModal onDetected={handleQr} onClose={() => setScanning(false)} />
+      )}
     </div>
   );
 }
