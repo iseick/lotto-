@@ -1,5 +1,6 @@
 import { listPurchases, gamesOfPurchase } from "@/lib/purchases";
 import { resultsOfPurchase } from "@/lib/score";
+import { getDraw, type DrawRow } from "@/lib/draws";
 import { LottoBalls } from "../components/LottoBalls";
 import { RankBadge } from "../components/RankBadge";
 
@@ -13,11 +14,21 @@ const MODE_LABEL: Record<string, string> = {
 
 export default async function PurchasesPage() {
   const purchases = await listPurchases();
+
+  // 구매 회차들의 당첨번호를 한 번씩만 조회해 맵으로.
+  const rounds = [...new Set(purchases.map((p) => p.round))];
+  const drawList = await Promise.all(rounds.map((r) => getDraw(r)));
+  const draws = new Map<number, DrawRow>();
+  drawList.forEach((d) => {
+    if (d) draws.set(d.round, d);
+  });
+
   const details = await Promise.all(
     purchases.map(async (p) => ({
       p,
       games: await gamesOfPurchase(p.id),
       results: await resultsOfPurchase(p.id),
+      draw: draws.get(p.round),
     }))
   );
 
@@ -39,8 +50,11 @@ export default async function PurchasesPage() {
         </p>
       ) : (
         <div className="space-y-3">
-          {details.map(({ p, games, results }) => {
+          {details.map(({ p, games, results, draw }) => {
             const scored = results.size > 0;
+            const winning = draw
+              ? [draw.n1, draw.n2, draw.n3, draw.n4, draw.n5, draw.n6]
+              : undefined;
             return (
               <div
                 key={p.id}
@@ -63,6 +77,15 @@ export default async function PurchasesPage() {
                     {p.amount.toLocaleString("ko-KR")}원
                   </div>
                 </div>
+                {draw && (
+                  <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs">
+                    <span className="text-neutral-500">당첨번호</span>
+                    <LottoBalls
+                      numbers={winning!}
+                      bonus={draw.bonus}
+                    />
+                  </div>
+                )}
                 <ul className="space-y-1.5">
                   {games.map((g) => {
                     const r = results.get(g.id);
@@ -79,6 +102,8 @@ export default async function PurchasesPage() {
                         </span>
                         <LottoBalls
                           numbers={[g.n1, g.n2, g.n3, g.n4, g.n5, g.n6]}
+                          winning={winning}
+                          winningBonus={draw?.bonus}
                         />
                         {r && (
                           <RankBadge
