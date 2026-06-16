@@ -4,9 +4,11 @@ import { FrequencyChart } from "../components/FrequencyChart";
 
 export const dynamic = "force-dynamic";
 
-export default function AnalysisPage() {
-  const { freqs, totalDraws } = numberFrequencies();
-  const d = distroStats();
+export default async function AnalysisPage() {
+  const [{ freqs, totalDraws }, d] = await Promise.all([
+    numberFrequencies(),
+    distroStats(),
+  ]);
 
   const hot = [...freqs].sort((a, b) => b.count - a.count).slice(0, 6);
   const cold = [...freqs].sort((a, b) => a.count - b.count).slice(0, 6);

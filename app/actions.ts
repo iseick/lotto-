@@ -18,7 +18,7 @@ export async function createStoreAction(
   input: StoreInput
 ): Promise<ActionResult> {
   try {
-    const id = createStore(input);
+    const id = await createStore(input);
     revalidatePath("/stores");
     revalidatePath("/purchases/new");
     return { ok: true, id };
@@ -31,9 +31,9 @@ export async function createPurchaseAction(
   input: PurchaseInput
 ): Promise<ActionResult> {
   try {
-    const id = createPurchase(input);
+    const id = await createPurchase(input);
     // 그 회차 당첨번호가 이미 있으면 즉시 채점.
-    scoreRound(input.round);
+    await scoreRound(input.round);
     revalidatePath("/purchases");
     revalidatePath("/");
     return { ok: true, id };
@@ -46,9 +46,9 @@ export async function addDrawAction(
   input: ManualDrawInput
 ): Promise<ActionResult> {
   try {
-    addManualDraw(input);
+    await addManualDraw(input);
     // 이 회차를 구매한 게임들을 자동 채점.
-    scoreRound(input.round);
+    await scoreRound(input.round);
     revalidatePath("/draws");
     revalidatePath("/purchases");
     revalidatePath("/");

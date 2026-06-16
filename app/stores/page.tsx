@@ -3,8 +3,8 @@ import { StoreForm } from "../components/StoreForm";
 
 export const dynamic = "force-dynamic";
 
-export default function StoresPage() {
-  const stores = listStores();
+export default async function StoresPage() {
+  const stores = await listStores();
   return (
     <div className="space-y-5">
       <h1 className="text-xl font-bold">판매점 ({stores.length})</h1>

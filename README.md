@@ -12,17 +12,36 @@
 ## 기술 스택
 
 - **Next.js 16** (App Router, TypeScript) — 웹 UI + API
-- **better-sqlite3** — 로컬 SQLite (`data/lotto.db`)
+- **libSQL / Turso** — SQLite 호환 DB. 로컬은 `file:data/lotto.db`, 프로덕션(Vercel)은 Turso
 - **Tailwind CSS v4**
 
-## 실행
+## 실행 (로컬)
 
 ```bash
 npm install
-npm run dev        # http://localhost:3000
+npm run dev        # http://localhost:3000  → file:data/lotto.db 사용
 
 # 과거 전체 회차 백필 (최초 1회)
-npm run seed       # data/seed/draws.csv → DB import
+npm run seed       # data/seed/draws.csv → DB
+```
+
+`TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` 환경변수가 없으면 로컬 SQLite 파일을 쓴다(.env.example 참고).
+
+## Vercel 배포
+
+Vercel은 서버리스라 파일 SQLite에 쓸 수 없어 **Turso**(SQLite 호환 클라우드 DB)를 쓴다.
+
+```bash
+# 1. Turso DB 생성
+turso db create lotto
+turso db show lotto --url            # → TURSO_DATABASE_URL
+turso db tokens create lotto         # → TURSO_AUTH_TOKEN
+
+# 2. 과거 회차 시드 (Turso로)
+TURSO_DATABASE_URL=... TURSO_AUTH_TOKEN=... npm run seed
+
+# 3. GitHub push 후 Vercel에서 import,
+#    환경변수 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN 등록 → Deploy
 ```
 
 ## 데이터 수집 방식 (중요)

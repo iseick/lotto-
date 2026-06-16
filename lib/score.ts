@@ -34,65 +34,64 @@ interface GameRowMin {
   n6: number;
 }
 
+const RESULT_UPSERT = `
+  INSERT INTO results (game_id, round, match_count, bonus_match, rank, prize)
+  VALUES (?,?,?,?,?,?)
+  ON CONFLICT(game_id) DO UPDATE SET
+    round=excluded.round, match_count=excluded.match_count,
+    bonus_match=excluded.bonus_match, rank=excluded.rank,
+    prize=excluded.prize, scored_at=datetime('now')`;
+
 /**
  * 해당 회차의 모든 게임을 채점해 results에 upsert.
- * 그 회차 당첨번호(draws)가 없으면 채점 불가 → 0 반환.
- * 당첨번호/구매 등록 양쪽에서 호출(멱등).
+ * 그 회차 당첨번호(draws)가 없으면 0. (당첨번호/구매 등록 양쪽에서 호출, 멱등)
  */
-export function scoreRound(round: number): number {
-  const db = getDb();
-  const draw = db
-    .prepare(
-      "SELECT n1,n2,n3,n4,n5,n6,bonus,first_prize FROM draws WHERE round=?"
-    )
-    .get(round) as DrawRowMin | undefined;
+export async function scoreRound(round: number): Promise<number> {
+  const db = await getDb();
+  const drs = await db.execute({
+    sql: "SELECT n1,n2,n3,n4,n5,n6,bonus,first_prize FROM draws WHERE round=?",
+    args: [round],
+  });
+  const draw = drs.rows[0] as unknown as DrawRowMin | undefined;
   if (!draw) return 0;
 
   const winning = [draw.n1, draw.n2, draw.n3, draw.n4, draw.n5, draw.n6];
-  const games = db
-    .prepare(
-      `SELECT g.id, g.n1, g.n2, g.n3, g.n4, g.n5, g.n6
-       FROM games g JOIN purchases p ON p.id = g.purchase_id
-       WHERE p.round = ?`
-    )
-    .all(round) as GameRowMin[];
+  const grs = await db.execute({
+    sql: `SELECT g.id, g.n1, g.n2, g.n3, g.n4, g.n5, g.n6
+          FROM games g JOIN purchases p ON p.id = g.purchase_id
+          WHERE p.round = ?`,
+    args: [round],
+  });
+  const games = grs.rows as unknown as GameRowMin[];
   if (games.length === 0) return 0;
 
-  const stmt = db.prepare(
-    `INSERT INTO results (game_id, round, match_count, bonus_match, rank, prize)
-     VALUES (@game_id, @round, @match_count, @bonus_match, @rank, @prize)
-     ON CONFLICT(game_id) DO UPDATE SET
-       round=@round, match_count=@match_count, bonus_match=@bonus_match,
-       rank=@rank, prize=@prize, scored_at=datetime('now')`
-  );
-
-  const tx = db.transaction((rows: GameRowMin[]) => {
-    for (const g of rows) {
-      const s = scoreGame([g.n1, g.n2, g.n3, g.n4, g.n5, g.n6], {
-        numbers: winning,
-        bonus: draw.bonus,
-      });
-      stmt.run({
-        game_id: g.id,
+  const stmts = games.map((g) => {
+    const s = scoreGame([g.n1, g.n2, g.n3, g.n4, g.n5, g.n6], {
+      numbers: winning,
+      bonus: draw.bonus,
+    });
+    return {
+      sql: RESULT_UPSERT,
+      args: [
+        g.id,
         round,
-        match_count: s.matchCount,
-        bonus_match: s.bonusMatch ? 1 : 0,
-        rank: s.rank,
-        prize: prizeFor(s.rank, draw.first_prize),
-      });
-    }
-    return rows.length;
+        s.matchCount,
+        s.bonusMatch ? 1 : 0,
+        s.rank,
+        prizeFor(s.rank, draw.first_prize),
+      ],
+    };
   });
-  return tx(games);
+  await db.batch(stmts, "write");
+  return games.length;
 }
 
 /** 구매가 존재하는 모든 회차를 재채점. (CSV 일괄 import 후 등) */
-export function scoreAllPurchasedRounds(): number {
-  const rounds = getDb()
-    .prepare("SELECT DISTINCT round FROM purchases")
-    .all() as { round: number }[];
+export async function scoreAllPurchasedRounds(): Promise<number> {
+  const db = await getDb();
+  const rs = await db.execute("SELECT DISTINCT round FROM purchases");
   let n = 0;
-  for (const { round } of rounds) n += scoreRound(round);
+  for (const row of rs.rows) n += await scoreRound(row.round as number);
   return n;
 }
 
@@ -105,14 +104,17 @@ export interface GameResult {
 }
 
 /** 구매 1건의 게임별 채점 결과 맵(game_id → 결과). 미채점이면 비어 있음. */
-export function resultsOfPurchase(purchaseId: number): Map<number, GameResult> {
-  const rows = getDb()
-    .prepare(
-      `SELECT r.game_id, r.match_count, r.bonus_match, r.rank, r.prize
-       FROM results r JOIN games g ON g.id = r.game_id
-       WHERE g.purchase_id = ?`
-    )
-    .all(purchaseId) as GameResult[];
+export async function resultsOfPurchase(
+  purchaseId: number
+): Promise<Map<number, GameResult>> {
+  const db = await getDb();
+  const rs = await db.execute({
+    sql: `SELECT r.game_id, r.match_count, r.bonus_match, r.rank, r.prize
+          FROM results r JOIN games g ON g.id = r.game_id
+          WHERE g.purchase_id = ?`,
+    args: [purchaseId],
+  });
+  const rows = rs.rows as unknown as GameResult[];
   return new Map(rows.map((r) => [r.game_id, r]));
 }
 
@@ -122,25 +124,27 @@ export interface RoiSummary {
   scoredGames: number;
   winningGames: number;
   net: number;
-  roiPct: number | null; // 수익률 %, 지출 0이면 null
+  roiPct: number | null;
 }
 
 /** 전체 ROI 요약(지출 대비 당첨금). */
-export function roiSummary(): RoiSummary {
-  const db = getDb();
-  const spent = (
-    db.prepare("SELECT COALESCE(SUM(amount),0) s FROM purchases").get() as {
-      s: number;
-    }
-  ).s;
-  const w = db
-    .prepare(
-      `SELECT COALESCE(SUM(prize),0) winnings,
-              COUNT(*) scored,
-              COALESCE(SUM(CASE WHEN rank IS NOT NULL THEN 1 ELSE 0 END),0) won
-       FROM results`
-    )
-    .get() as { winnings: number; scored: number; won: number };
+export async function roiSummary(): Promise<RoiSummary> {
+  const db = await getDb();
+  const srs = await db.execute(
+    "SELECT COALESCE(SUM(amount),0) AS s FROM purchases"
+  );
+  const spent = (srs.rows[0]?.s as number) ?? 0;
+  const wrs = await db.execute(
+    `SELECT COALESCE(SUM(prize),0) AS winnings,
+            COUNT(*) AS scored,
+            COALESCE(SUM(CASE WHEN rank IS NOT NULL THEN 1 ELSE 0 END),0) AS won
+     FROM results`
+  );
+  const w = wrs.rows[0] as unknown as {
+    winnings: number;
+    scored: number;
+    won: number;
+  };
   return {
     spent,
     winnings: w.winnings,
@@ -160,20 +164,20 @@ export interface RoundResult {
 }
 
 /** 회차별 내 적중 요약(구매가 있는 회차만). */
-export function resultsByRound(): RoundResult[] {
-  return getDb()
-    .prepare(
-      `SELECT p.round,
-              d.draw_date,
-              COUNT(g.id) AS games,
-              MIN(r.rank) AS best_rank,
-              COALESCE(SUM(r.prize),0) AS winnings
-       FROM purchases p
-       JOIN games g ON g.purchase_id = p.id
-       LEFT JOIN results r ON r.game_id = g.id
-       LEFT JOIN draws d ON d.round = p.round
-       GROUP BY p.round
-       ORDER BY p.round DESC`
-    )
-    .all() as RoundResult[];
+export async function resultsByRound(): Promise<RoundResult[]> {
+  const db = await getDb();
+  const rs = await db.execute(
+    `SELECT p.round,
+            d.draw_date,
+            COUNT(g.id) AS games,
+            MIN(r.rank) AS best_rank,
+            COALESCE(SUM(r.prize),0) AS winnings
+     FROM purchases p
+     JOIN games g ON g.purchase_id = p.id
+     LEFT JOIN results r ON r.game_id = g.id
+     LEFT JOIN draws d ON d.round = p.round
+     GROUP BY p.round
+     ORDER BY p.round DESC`
+  );
+  return rs.rows as unknown as RoundResult[];
 }

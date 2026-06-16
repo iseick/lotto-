@@ -20,8 +20,8 @@ export async function POST(req: Request) {
       );
     }
     const rows = parseDrawsCsv(text);
-    const imported = upsertDraws(rows);
-    const scored = scoreAllPurchasedRounds();
+    const imported = await upsertDraws(rows);
+    const scored = await scoreAllPurchasedRounds();
     return NextResponse.json({ ok: true, imported, scored });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

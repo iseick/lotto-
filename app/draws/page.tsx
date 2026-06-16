@@ -12,9 +12,9 @@ export default async function DrawsPage({
 }) {
   const sp = await searchParams;
   const page = Math.max(1, parseInt(sp.page ?? "1") || 1);
-  const total = countDraws();
+  const total = await countDraws();
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const rows = listDraws(PAGE_SIZE, (page - 1) * PAGE_SIZE);
+  const rows = await listDraws(PAGE_SIZE, (page - 1) * PAGE_SIZE);
 
   return (
     <div className="space-y-4">

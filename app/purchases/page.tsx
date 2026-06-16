@@ -11,8 +11,15 @@ const MODE_LABEL: Record<string, string> = {
   semi: "반자동",
 };
 
-export default function PurchasesPage() {
-  const purchases = listPurchases();
+export default async function PurchasesPage() {
+  const purchases = await listPurchases();
+  const details = await Promise.all(
+    purchases.map(async (p) => ({
+      p,
+      games: await gamesOfPurchase(p.id),
+      results: await resultsOfPurchase(p.id),
+    }))
+  );
 
   return (
     <div className="space-y-4">
@@ -32,9 +39,7 @@ export default function PurchasesPage() {
         </p>
       ) : (
         <div className="space-y-3">
-          {purchases.map((p) => {
-            const games = gamesOfPurchase(p.id);
-            const results = resultsOfPurchase(p.id);
+          {details.map(({ p, games, results }) => {
             const scored = results.size > 0;
             return (
               <div

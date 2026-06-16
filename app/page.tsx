@@ -10,15 +10,18 @@ function fmtWon(v: number | null): string {
   return v.toLocaleString("ko-KR") + "원";
 }
 
-export default function Home() {
-  const total = countDraws();
-  const latest = latestRound();
-  const recent = listDraws(5);
+export default async function Home() {
+  const [total, latest, recent, myPurchases, spent, roi, rounds] =
+    await Promise.all([
+      countDraws(),
+      latestRound(),
+      listDraws(5),
+      countPurchases(),
+      totalSpent(),
+      roiSummary(),
+      resultsByRound(),
+    ]);
   const top = recent[0];
-  const myPurchases = countPurchases();
-  const spent = totalSpent();
-  const roi = roiSummary();
-  const rounds = resultsByRound();
 
   return (
     <div className="space-y-6">

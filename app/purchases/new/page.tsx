@@ -5,9 +5,10 @@ import { PurchaseForm } from "../../components/PurchaseForm";
 
 export const dynamic = "force-dynamic";
 
-export default function NewPurchasePage() {
-  const stores = listStores().map((s) => ({ id: s.id, name: s.name }));
-  const nextRound = latestRound() + 1;
+export default async function NewPurchasePage() {
+  const [storeRows, latest] = await Promise.all([listStores(), latestRound()]);
+  const stores = storeRows.map((s) => ({ id: s.id, name: s.name }));
+  const nextRound = latest + 1;
 
   return (
     <div className="space-y-4">

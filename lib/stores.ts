@@ -18,21 +18,21 @@ export interface StoreInput {
   memo?: string | null;
 }
 
-export function createStore(input: StoreInput): number {
+export async function createStore(input: StoreInput): Promise<number> {
   const name = input.name?.trim();
   if (!name) throw new Error("판매점 이름은 필수입니다");
-  const res = getDb()
-    .prepare(
-      `INSERT INTO stores (name, address, first_round, memo)
-       VALUES (@name, @address, @first_round, @memo)`
-    )
-    .run({
+  const db = await getDb();
+  const rs = await db.execute({
+    sql: `INSERT INTO stores (name, address, first_round, memo)
+          VALUES (?, ?, ?, ?)`,
+    args: [
       name,
-      address: input.address?.trim() || null,
-      first_round: input.first_round ?? null,
-      memo: input.memo?.trim() || null,
-    });
-  return Number(res.lastInsertRowid);
+      input.address?.trim() || null,
+      input.first_round ?? null,
+      input.memo?.trim() || null,
+    ],
+  });
+  return Number(rs.lastInsertRowid);
 }
 
 export interface StoreWithStats extends StoreRow {
@@ -41,30 +41,34 @@ export interface StoreWithStats extends StoreRow {
   best_rank: number | null;
 }
 
-export function listStores(): StoreWithStats[] {
-  return getDb()
-    .prepare(
-      `SELECT s.*,
-              COUNT(DISTINCT p.id) AS purchase_count,
-              COALESCE(SUM(r.prize), 0) AS winnings,
-              MIN(r.rank) AS best_rank
-       FROM stores s
-       LEFT JOIN purchases p ON p.store_id = s.id
-       LEFT JOIN games g ON g.purchase_id = p.id
-       LEFT JOIN results r ON r.game_id = g.id
-       GROUP BY s.id
-       ORDER BY s.created_at DESC`
-    )
-    .all() as StoreWithStats[];
+export async function listStores(): Promise<StoreWithStats[]> {
+  const db = await getDb();
+  const rs = await db.execute(
+    `SELECT s.*,
+            COUNT(DISTINCT p.id) AS purchase_count,
+            COALESCE(SUM(r.prize), 0) AS winnings,
+            MIN(r.rank) AS best_rank
+     FROM stores s
+     LEFT JOIN purchases p ON p.store_id = s.id
+     LEFT JOIN games g ON g.purchase_id = p.id
+     LEFT JOIN results r ON r.game_id = g.id
+     GROUP BY s.id
+     ORDER BY s.created_at DESC`
+  );
+  return rs.rows as unknown as StoreWithStats[];
 }
 
-export function getStore(id: number): StoreRow | undefined {
-  return getDb().prepare("SELECT * FROM stores WHERE id = ?").get(id) as
-    | StoreRow
-    | undefined;
+export async function getStore(id: number): Promise<StoreRow | undefined> {
+  const db = await getDb();
+  const rs = await db.execute({
+    sql: "SELECT * FROM stores WHERE id = ?",
+    args: [id],
+  });
+  return rs.rows[0] as unknown as StoreRow | undefined;
 }
 
-export function countStores(): number {
-  return (getDb().prepare("SELECT COUNT(*) c FROM stores").get() as { c: number })
-    .c;
+export async function countStores(): Promise<number> {
+  const db = await getDb();
+  const rs = await db.execute("SELECT COUNT(*) AS c FROM stores");
+  return (rs.rows[0]?.c as number) ?? 0;
 }

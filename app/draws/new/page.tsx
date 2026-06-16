@@ -4,8 +4,8 @@ import { DrawForm } from "../../components/DrawForm";
 
 export const dynamic = "force-dynamic";
 
-export default function NewDrawPage() {
-  const nextRound = latestRound() + 1;
+export default async function NewDrawPage() {
+  const nextRound = (await latestRound()) + 1;
   return (
     <div className="space-y-4">
       <div className="flex items-baseline justify-between">

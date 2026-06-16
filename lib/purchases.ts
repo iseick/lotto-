@@ -19,7 +19,7 @@ export interface PurchaseInput {
 }
 
 /** 구매 1건 + 게임들을 한 트랜잭션으로 저장. purchase id 반환. */
-export function createPurchase(input: PurchaseInput): number {
+export async function createPurchase(input: PurchaseInput): Promise<number> {
   if (!Number.isInteger(input.round) || input.round < 1)
     throw new Error("회차를 올바르게 입력하세요");
   if (!input.games?.length) throw new Error("게임을 1줄 이상 입력하세요");
@@ -32,33 +32,36 @@ export function createPurchase(input: PurchaseInput): number {
     }
   });
 
-  const db = getDb();
-  const tx = db.transaction((p: PurchaseInput) => {
-    const pres = db
-      .prepare(
-        `INSERT INTO purchases (round, store_id, purchase_date, amount, memo)
-         VALUES (@round, @store_id, @purchase_date, @amount, @memo)`
-      )
-      .run({
-        round: p.round,
-        store_id: p.store_id ?? null,
-        purchase_date: p.purchase_date ?? null,
-        amount: p.amount ?? p.games.length * 1000,
-        memo: p.memo?.trim() || null,
-      });
+  const db = await getDb();
+  const tx = await db.transaction("write");
+  try {
+    const pres = await tx.execute({
+      sql: `INSERT INTO purchases (round, store_id, purchase_date, amount, memo)
+            VALUES (?, ?, ?, ?, ?)`,
+      args: [
+        input.round,
+        input.store_id ?? null,
+        input.purchase_date ?? null,
+        input.amount ?? input.games.length * 1000,
+        input.memo?.trim() || null,
+      ],
+    });
     const purchaseId = Number(pres.lastInsertRowid);
 
-    const gstmt = db.prepare(
-      `INSERT INTO games (purchase_id, slot, mode, n1, n2, n3, n4, n5, n6)
-       VALUES (?,?,?,?,?,?,?,?,?)`
-    );
-    for (const g of p.games) {
-      const sorted = [...g.numbers].sort((a, b) => a - b);
-      gstmt.run(purchaseId, g.slot ?? null, g.mode, ...sorted);
+    for (const g of input.games) {
+      const s = [...g.numbers].sort((a, b) => a - b);
+      await tx.execute({
+        sql: `INSERT INTO games (purchase_id, slot, mode, n1, n2, n3, n4, n5, n6)
+              VALUES (?,?,?,?,?,?,?,?,?)`,
+        args: [purchaseId, g.slot ?? null, g.mode, s[0], s[1], s[2], s[3], s[4], s[5]],
+      });
     }
+    await tx.commit();
     return purchaseId;
-  });
-  return tx(input);
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  }
 }
 
 export interface PurchaseListRow {
@@ -71,20 +74,24 @@ export interface PurchaseListRow {
   created_at: string;
 }
 
-export function listPurchases(limit = 50, offset = 0): PurchaseListRow[] {
-  return getDb()
-    .prepare(
-      `SELECT p.id, p.round, p.purchase_date, p.amount, p.created_at,
-              s.name AS store_name,
-              COUNT(g.id) AS game_count
-       FROM purchases p
-       LEFT JOIN stores s ON s.id = p.store_id
-       LEFT JOIN games g ON g.purchase_id = p.id
-       GROUP BY p.id
-       ORDER BY p.round DESC, p.id DESC
-       LIMIT ? OFFSET ?`
-    )
-    .all(limit, offset) as PurchaseListRow[];
+export async function listPurchases(
+  limit = 50,
+  offset = 0
+): Promise<PurchaseListRow[]> {
+  const db = await getDb();
+  const rs = await db.execute({
+    sql: `SELECT p.id, p.round, p.purchase_date, p.amount, p.created_at,
+                 s.name AS store_name,
+                 COUNT(g.id) AS game_count
+          FROM purchases p
+          LEFT JOIN stores s ON s.id = p.store_id
+          LEFT JOIN games g ON g.purchase_id = p.id
+          GROUP BY p.id
+          ORDER BY p.round DESC, p.id DESC
+          LIMIT ? OFFSET ?`,
+    args: [limit, offset],
+  });
+  return rs.rows as unknown as PurchaseListRow[];
 }
 
 export interface GameRow {
@@ -99,25 +106,26 @@ export interface GameRow {
   n6: number;
 }
 
-export function gamesOfPurchase(purchaseId: number): GameRow[] {
-  return getDb()
-    .prepare(
-      `SELECT id, slot, mode, n1, n2, n3, n4, n5, n6
-       FROM games WHERE purchase_id = ? ORDER BY id`
-    )
-    .all(purchaseId) as GameRow[];
+export async function gamesOfPurchase(purchaseId: number): Promise<GameRow[]> {
+  const db = await getDb();
+  const rs = await db.execute({
+    sql: `SELECT id, slot, mode, n1, n2, n3, n4, n5, n6
+          FROM games WHERE purchase_id = ? ORDER BY id`,
+    args: [purchaseId],
+  });
+  return rs.rows as unknown as GameRow[];
 }
 
-export function countPurchases(): number {
-  return (
-    getDb().prepare("SELECT COUNT(*) c FROM purchases").get() as { c: number }
-  ).c;
+export async function countPurchases(): Promise<number> {
+  const db = await getDb();
+  const rs = await db.execute("SELECT COUNT(*) AS c FROM purchases");
+  return (rs.rows[0]?.c as number) ?? 0;
 }
 
-export function totalSpent(): number {
-  return (
-    getDb().prepare("SELECT COALESCE(SUM(amount),0) s FROM purchases").get() as {
-      s: number;
-    }
-  ).s;
+export async function totalSpent(): Promise<number> {
+  const db = await getDb();
+  const rs = await db.execute(
+    "SELECT COALESCE(SUM(amount),0) AS s FROM purchases"
+  );
+  return (rs.rows[0]?.s as number) ?? 0;
 }

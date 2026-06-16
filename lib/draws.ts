@@ -16,24 +16,43 @@ export interface DrawRow {
   total_sales: number | null;
 }
 
-/** 회차별 당첨 결과 upsert. 트랜잭션으로 일괄 처리. */
-export function upsertDraws(rows: DrawRow[]): number {
-  const db = getDb();
-  const stmt = db.prepare(
-    `INSERT INTO draws (round, draw_date, n1, n2, n3, n4, n5, n6, bonus,
-                        first_winners, first_prize, total_sales)
-     VALUES (@round, @draw_date, @n1, @n2, @n3, @n4, @n5, @n6, @bonus,
-             @first_winners, @first_prize, @total_sales)
-     ON CONFLICT(round) DO UPDATE SET
-       draw_date=@draw_date, n1=@n1, n2=@n2, n3=@n3, n4=@n4, n5=@n5, n6=@n6,
-       bonus=@bonus, first_winners=@first_winners, first_prize=@first_prize,
-       total_sales=@total_sales, fetched_at=datetime('now')`
+const UPSERT_SQL = `
+  INSERT INTO draws (round, draw_date, n1, n2, n3, n4, n5, n6, bonus,
+                     first_winners, first_prize, total_sales)
+  VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+  ON CONFLICT(round) DO UPDATE SET
+    draw_date=excluded.draw_date, n1=excluded.n1, n2=excluded.n2,
+    n3=excluded.n3, n4=excluded.n4, n5=excluded.n5, n6=excluded.n6,
+    bonus=excluded.bonus, first_winners=excluded.first_winners,
+    first_prize=excluded.first_prize, total_sales=excluded.total_sales,
+    fetched_at=datetime('now')`;
+
+function upsertArgs(r: DrawRow) {
+  return [
+    r.round,
+    r.draw_date,
+    r.n1,
+    r.n2,
+    r.n3,
+    r.n4,
+    r.n5,
+    r.n6,
+    r.bonus,
+    r.first_winners,
+    r.first_prize,
+    r.total_sales,
+  ];
+}
+
+/** 회차별 당첨 결과 upsert(일괄). */
+export async function upsertDraws(rows: DrawRow[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  const db = await getDb();
+  await db.batch(
+    rows.map((r) => ({ sql: UPSERT_SQL, args: upsertArgs(r) })),
+    "write"
   );
-  const tx = db.transaction((items: DrawRow[]) => {
-    for (const r of items) stmt.run(r);
-    return items.length;
-  });
-  return tx(rows);
+  return rows.length;
 }
 
 export interface ManualDrawInput {
@@ -47,13 +66,13 @@ export interface ManualDrawInput {
 }
 
 /** 주간 당첨번호 수동 입력(단일 회차). 번호 무결성 검증 후 upsert. */
-export function addManualDraw(input: ManualDrawInput): void {
+export async function addManualDraw(input: ManualDrawInput): Promise<void> {
   if (!Number.isInteger(input.round) || input.round < 1)
     throw new Error("회차를 올바르게 입력하세요");
   if (!input.draw_date) throw new Error("추첨일을 입력하세요");
   assertWithBonus(input.numbers, input.bonus);
   const n = [...input.numbers].sort((a, b) => a - b);
-  upsertDraws([
+  await upsertDraws([
     {
       round: input.round,
       draw_date: input.draw_date,
@@ -71,28 +90,32 @@ export function addManualDraw(input: ManualDrawInput): void {
   ]);
 }
 
-export function getDraw(round: number): DrawRow | undefined {
-  return getDb()
-    .prepare("SELECT * FROM draws WHERE round = ?")
-    .get(round) as DrawRow | undefined;
+export async function getDraw(round: number): Promise<DrawRow | undefined> {
+  const db = await getDb();
+  const rs = await db.execute({
+    sql: "SELECT * FROM draws WHERE round = ?",
+    args: [round],
+  });
+  return rs.rows[0] as unknown as DrawRow | undefined;
 }
 
-export function latestRound(): number {
-  const row = getDb()
-    .prepare("SELECT MAX(round) AS m FROM draws")
-    .get() as { m: number | null };
-  return row.m ?? 0;
+export async function latestRound(): Promise<number> {
+  const db = await getDb();
+  const rs = await db.execute("SELECT MAX(round) AS m FROM draws");
+  return (rs.rows[0]?.m as number | null) ?? 0;
 }
 
-export function countDraws(): number {
-  const row = getDb()
-    .prepare("SELECT COUNT(*) AS c FROM draws")
-    .get() as { c: number };
-  return row.c;
+export async function countDraws(): Promise<number> {
+  const db = await getDb();
+  const rs = await db.execute("SELECT COUNT(*) AS c FROM draws");
+  return (rs.rows[0]?.c as number) ?? 0;
 }
 
-export function listDraws(limit = 50, offset = 0): DrawRow[] {
-  return getDb()
-    .prepare("SELECT * FROM draws ORDER BY round DESC LIMIT ? OFFSET ?")
-    .all(limit, offset) as DrawRow[];
+export async function listDraws(limit = 50, offset = 0): Promise<DrawRow[]> {
+  const db = await getDb();
+  const rs = await db.execute({
+    sql: "SELECT * FROM draws ORDER BY round DESC LIMIT ? OFFSET ?",
+    args: [limit, offset],
+  });
+  return rs.rows as unknown as DrawRow[];
 }

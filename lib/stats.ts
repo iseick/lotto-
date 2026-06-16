@@ -12,10 +12,10 @@ interface RawDraw {
   bonus: number;
 }
 
-function allDraws(): RawDraw[] {
-  return getDb()
-    .prepare("SELECT n1,n2,n3,n4,n5,n6,bonus FROM draws")
-    .all() as RawDraw[];
+async function allDraws(): Promise<RawDraw[]> {
+  const db = await getDb();
+  const rs = await db.execute("SELECT n1,n2,n3,n4,n5,n6,bonus FROM draws");
+  return rs.rows as unknown as RawDraw[];
 }
 
 export interface NumberFreq {
@@ -24,8 +24,11 @@ export interface NumberFreq {
 }
 
 /** 본번호 1~45 출현 빈도 (보너스 제외). 회차 수도 함께. */
-export function numberFrequencies(): { freqs: NumberFreq[]; totalDraws: number } {
-  const draws = allDraws();
+export async function numberFrequencies(): Promise<{
+  freqs: NumberFreq[];
+  totalDraws: number;
+}> {
+  const draws = await allDraws();
   const counts = new Array(46).fill(0);
   for (const d of draws) {
     for (const n of [d.n1, d.n2, d.n3, d.n4, d.n5, d.n6]) counts[n]++;
@@ -37,17 +40,17 @@ export function numberFrequencies(): { freqs: NumberFreq[]; totalDraws: number }
 
 export interface DistroStats {
   totalDraws: number;
-  oddAvg: number; // 회차당 평균 홀수 개수
-  lowAvg: number; // 회차당 평균 저번호(1~22) 개수
+  oddAvg: number;
+  lowAvg: number;
   sumMin: number;
   sumMax: number;
   sumAvg: number;
-  sumBuckets: { label: string; count: number }[]; // 합계 구간 분포
+  sumBuckets: { label: string; count: number }[];
 }
 
 /** 홀짝·고저·합계 분포 요약. */
-export function distroStats(): DistroStats {
-  const draws = allDraws();
+export async function distroStats(): Promise<DistroStats> {
+  const draws = await allDraws();
   const total = draws.length || 1;
   let oddSum = 0;
   let lowSum = 0;
