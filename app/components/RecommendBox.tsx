@@ -1,16 +1,30 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { recommendAction } from "../actions";
+import { recommendAction, recoCommentAction } from "../actions";
 import { LottoBalls } from "./LottoBalls";
 import type { Recommendation } from "@/lib/recommend";
+import type { RecoComment } from "@/lib/recoComment";
 
 export function RecommendBox() {
   const [reco, setReco] = useState<Recommendation | null>(null);
+  const [comment, setComment] = useState<RecoComment | null>(null);
+  const [commenting, setCommenting] = useState(false);
   const [pending, start] = useTransition();
 
   function refresh() {
-    start(async () => setReco(await recommendAction()));
+    setComment(null);
+    start(async () => {
+      const r = await recommendAction();
+      setReco(r);
+      // 로컬 LLM 멘트는 별도로(느릴 수 있어 번호부터 보여줌).
+      setCommenting(true);
+      try {
+        setComment(await recoCommentAction(r));
+      } finally {
+        setCommenting(false);
+      }
+    });
   }
   useEffect(() => {
     refresh();
@@ -64,6 +78,19 @@ export function RecommendBox() {
               </li>
             ))}
           </ul>
+
+          {commenting && (
+            <p className="text-xs text-neutral-400">🤖 로컬 AI가 분석 중…</p>
+          )}
+          {comment && (
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-xs text-indigo-900">
+              <div className="mb-1 font-medium text-indigo-500">
+                🤖 로컬 AI 분석{" "}
+                <span className="font-normal opacity-60">({comment.model})</span>
+              </div>
+              {comment.text}
+            </div>
+          )}
 
           <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
             ⚠️ 이 추천은 <b>당첨 확률을 높이지 않습니다</b> (어떤 6개든 확률

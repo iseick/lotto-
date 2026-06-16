@@ -6,6 +6,7 @@ import { createPurchase, type PurchaseInput } from "@/lib/purchases";
 import { addManualDraw, type ManualDrawInput } from "@/lib/draws";
 import { scoreRound } from "@/lib/score";
 import { recommend, type Recommendation } from "@/lib/recommend";
+import { generateRecoComment, type RecoComment } from "@/lib/recoComment";
 
 export type ActionResult =
   | { ok: true; id?: number }
@@ -45,6 +46,13 @@ export async function createPurchaseAction(
 
 export async function recommendAction(): Promise<Recommendation> {
   return recommend(5);
+}
+
+// 로컬 Ollama가 있을 때만 멘트 생성, 없으면 null(UI는 고정문구 폴백).
+export async function recoCommentAction(
+  reco: Recommendation
+): Promise<RecoComment | null> {
+  return generateRecoComment(reco);
 }
 
 export async function addDrawAction(
